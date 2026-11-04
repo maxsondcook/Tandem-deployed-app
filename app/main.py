@@ -37,7 +37,6 @@ app = FastAPI(title="Tandem", lifespan=lifespan)
 
 class TripRequest(BaseModel):
     rider_name: str = Field(min_length=1, max_length=80)
-    rider_age: int = Field(ge=0, le=120)
     destination_station_id: str
     at: datetime | None = None
     min_docks: int = Field(default=5, ge=1, le=50)
@@ -85,11 +84,11 @@ def create_trip(req: TripRequest):
     result = suggest_docks(destination, snapshot, min_docks=req.min_docks)
 
     with db.pool().connection() as conn, conn.transaction():
-        user = conn.execute("SELECT id FROM users WHERE name = %s AND age = %s LIMIT 1",
-                            (req.rider_name, req.rider_age)).fetchone()
+        user = conn.execute("SELECT id FROM users WHERE name = %s LIMIT 1",
+                            (req.rider_name,)).fetchone()
         if user is None:
-            user = conn.execute("INSERT INTO users (name, age) VALUES (%s, %s) RETURNING id",
-                                (req.rider_name, req.rider_age)).fetchone()
+            user = conn.execute("INSERT INTO users (name) VALUES (%s) RETURNING id",
+                                (req.rider_name,)).fetchone()
         trip = conn.execute("INSERT INTO trips (user_id, started_at) VALUES (%s, COALESCE(%s, now())) RETURNING id",
                             (user["id"], req.at)).fetchone()
         for s in result["suggestions"]:

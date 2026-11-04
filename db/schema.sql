@@ -38,8 +38,7 @@ CREATE INDEX station_status_station_fetched_at_idx
 
 CREATE TABLE users (
     id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name text NOT NULL,
-    age integer NOT NULL CHECK (age >= 0)
+    name text NOT NULL
 );
 
 CREATE TABLE trips (

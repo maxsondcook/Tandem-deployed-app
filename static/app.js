@@ -75,7 +75,6 @@ async function loadTrips() {
 $("trip-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const data = Object.fromEntries(new FormData(e.target));
-  data.rider_age = Number(data.rider_age);
   data.min_docks = Number(data.min_docks);
   const box = $("result");
   box.hidden = false;

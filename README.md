@@ -5,7 +5,7 @@ team's Railway Postgres (the `stations` / `station_status` / `users` / `trips` /
 
 The placeholder flow shows every layer working:
 
-1. **User input** — rider name, age, destination station, arrival time (form in `static/`).
+1. **User input** — rider name, destination station, arrival time (form in `static/`).
 2. **Backend model logic** — `app/model.py`: if the destination has too few open docks at that
    time, suggest the nearest stations that have room. Swap in the real analysis here.
 3. **Database access** — `app/main.py` reads station snapshots from `station_status`, and writes
