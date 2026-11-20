@@ -1,0 +1,23 @@
+{
+  "model": "Tandem group model v1: docks at arrival (linear regression)",
+  "outcome": "docks_in_30",
+  "minutes_ahead": 30,
+  "low_docks": 3,
+  "rush_hours_new_york": [
+    16,
+    19
+  ],
+  "intercept": -0.1800730725475041,
+  "coefficients": {
+    "docks_now": 0.9426664993642564,
+    "docks_change_15": 0.39699566860417446,
+    "capacity": 0.0372143629644978,
+    "minutes_after_4pm": -0.002298153895440492
+  },
+  "trained_on": {
+    "rows": 1463982,
+    "stations": 2486,
+    "first_day": "2026-10-14",
+    "last_day": "2026-11-19"
+  }
+}

@@ -22,6 +22,19 @@ async function loadHealth() {
   }
 }
 
+let lowDocks = 3;
+async function loadModelInfo() {
+  try {
+    const m = await api("/api/model");
+    lowDocks = m.low_docks;
+    const t = m.trained_on;
+    $("model-info").textContent = `Model: linear regression, ${m.minutes_ahead} minutes ahead, trained on ` +
+      `${t.rows.toLocaleString()} rows from ${t.stations.toLocaleString()} stations (${t.first_day} to ${t.last_day}, weekdays 4-7 PM).`;
+  } catch (e) {
+    $("model-info").textContent = `Model info unavailable: ${e.message}`;
+  }
+}
+
 async function loadTimes() {
   const times = await api("/api/times");
   $("time").innerHTML = times.map((t) => `<option value="${t}">${fmtTime(t)}</option>`).join("");
@@ -40,7 +53,8 @@ async function loadStations() {
 
   $("stations").innerHTML = rows
     .map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.bikes_available}</td>
-      <td class="num ${r.docks_available < 5 ? "warn" : ""}">${r.docks_available}</td><td class="num">${r.capacity}</td></tr>`)
+      <td class="num">${r.docks_available}</td>
+      <td class="num ${r.predicted_docks < lowDocks ? "warn" : ""}">${r.predicted_docks}</td><td class="num">${r.capacity}</td></tr>`)
     .join("");
   return rows;
 }
@@ -88,8 +102,8 @@ $("trip-form").addEventListener("submit", async (e) => {
     box.innerHTML = `<strong>Trip #${r.trip_id} saved.</strong> ${esc(r.reason)}` +
       (r.reroute
         ? r.suggestions.length
-          ? "<br>Try instead: " + r.suggestions.map((s) => `${esc(s.name)} (${s.docks_available} docks, ~${s.distance_m} m)`).join("; ")
-          : "<br>No nearby station has enough open docks."
+          ? "<br>Try instead: " + r.suggestions.map((s) => `${esc(s.name)} (${s.predicted_docks} docks predicted, ${s.docks_available} now, ~${s.distance_m} m)`).join("; ")
+          : "<br>No nearby station is predicted to have enough open docks."
         : " Dock there.");
     loadTrips();
   } catch (err) {
@@ -101,7 +115,7 @@ $("trip-form").addEventListener("submit", async (e) => {
 $("time").addEventListener("change", loadStations);
 
 (async () => {
-  await loadHealth();
+  await Promise.all([loadHealth(), loadModelInfo()]);
   await loadTimes();
   const stations = await loadStations();
   await Promise.all([loadChart(stations), loadTrips()]);
