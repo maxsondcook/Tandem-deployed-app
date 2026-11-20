@@ -10,20 +10,36 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import db
-from app.model import StationSnapshot, suggest_docks
+from app.model import COEFFICIENTS, LOW_DOCKS, MINUTES_AHEAD, StationSnapshot, predict_station, suggest_docks
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
-# Latest status row per station at or before a given time (defaults to the newest poll).
+# Latest status row per station at or before a given time (defaults to the newest poll),
+# plus that station's docks 15 minutes earlier, which the model needs.
 SNAPSHOT_SQL = """
-    SELECT DISTINCT ON (s.station_id)
-        s.station_id, s.short_name, s.name, s.lat::float AS lat, s.lon::float AS lon, s.capacity,
-        st.fetched_at, st.bikes_available, st.ebikes_available, st.docks_available
-    FROM stations s
-    JOIN station_status st ON st.station_id = s.station_id
-    WHERE st.fetched_at <= COALESCE(%(at)s, (SELECT max(fetched_at) FROM station_status))
-    ORDER BY s.station_id, st.fetched_at DESC
+    WITH t AS (SELECT COALESCE(%(at)s, (SELECT max(fetched_at) FROM station_status)) AS at),
+    now_rows AS (
+        SELECT DISTINCT ON (s.station_id)
+            s.station_id, s.short_name, s.name, s.lat::float AS lat, s.lon::float AS lon, s.capacity,
+            st.fetched_at, st.bikes_available, st.ebikes_available, st.docks_available
+        FROM stations s
+        JOIN station_status st ON st.station_id = s.station_id
+        WHERE st.fetched_at <= (SELECT at FROM t)
+        ORDER BY s.station_id, st.fetched_at DESC
+    )
+    SELECT n.*, (SELECT at FROM t) AS at, earlier.docks_available AS docks_15_ago
+    FROM now_rows n
+    LEFT JOIN LATERAL (
+        SELECT docks_available FROM station_status
+        WHERE station_id = n.station_id AND fetched_at <= (SELECT at FROM t) - interval '15 minutes'
+        ORDER BY fetched_at DESC LIMIT 1
+    ) earlier ON true
 """
+
+
+def snapshot(at: datetime | None) -> list[StationSnapshot]:
+    fields = StationSnapshot.__dataclass_fields__
+    return [StationSnapshot(**{k: r[k] for k in fields}) for r in db.fetch_all(SNAPSHOT_SQL, {"at": at})]
 
 
 @asynccontextmanager
@@ -35,11 +51,20 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Tandem", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def revalidate_frontend(request, call_next):
+    """Make browsers re-check index.html and /static files, so a new deploy shows up without a hard refresh."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 class TripRequest(BaseModel):
     rider_name: str = Field(min_length=1, max_length=80)
     destination_station_id: str
     at: datetime | None = None
-    min_docks: int = Field(default=5, ge=1, le=50)
+    min_docks: int = Field(default=LOW_DOCKS, ge=1, le=50)
 
 
 @app.get("/api/health")
@@ -56,7 +81,17 @@ def times():
 
 @app.get("/api/stations")
 def stations(at: datetime | None = None):
-    return db.fetch_all(SNAPSHOT_SQL, {"at": at})
+    rows = db.fetch_all(SNAPSHOT_SQL, {"at": at})
+    for r in rows:
+        s = StationSnapshot(**{k: r[k] for k in StationSnapshot.__dataclass_fields__})
+        r["predicted_docks"] = round(predict_station(s, r["at"]), 1)
+    return rows
+
+
+@app.get("/api/model")
+def model_info():
+    """What the dock model is and what it was trained on (for the UI)."""
+    return {"minutes_ahead": MINUTES_AHEAD, "low_docks": LOW_DOCKS, **COEFFICIENTS}
 
 
 @app.get("/api/stations/{station_id}/status")
@@ -75,13 +110,13 @@ def station_history(station_id: str):
 
 @app.post("/api/trips")
 def create_trip(req: TripRequest):
-    snapshot = [StationSnapshot(**{k: r[k] for k in StationSnapshot.__dataclass_fields__})
-                for r in db.fetch_all(SNAPSHOT_SQL, {"at": req.at})]
-    destination = next((s for s in snapshot if s.station_id == req.destination_station_id), None)
+    stations_now = snapshot(req.at)
+    destination = next((s for s in stations_now if s.station_id == req.destination_station_id), None)
     if destination is None:
         raise HTTPException(404, "Unknown destination station")
 
-    result = suggest_docks(destination, snapshot, min_docks=req.min_docks)
+    at = req.at or db.fetch_one("SELECT max(fetched_at) AS at FROM station_status")["at"]
+    result = suggest_docks(destination, stations_now, at, min_docks=req.min_docks)
 
     with db.pool().connection() as conn, conn.transaction():
         user = conn.execute("SELECT id FROM users WHERE name = %s LIMIT 1",

@@ -10,7 +10,8 @@
 <body>
   <header>
     <h1>Tandem</h1>
-    <p class="sub">App skeleton: browser → FastAPI → Postgres. <span id="health">Checking database…</span></p>
+    <p class="sub">Predicts free Citi Bike docks for when you arrive, not just right now. <span id="health">Checking database…</span></p>
+    <p class="sub" id="model-info"></p>
   </header>
 
   <main>
@@ -19,8 +20,8 @@
       <form id="trip-form">
         <label>Rider name <input name="rider_name" required value="Test Rider"></label>
         <label>Destination <select name="destination_station_id" id="destination" required></select></label>
-        <label>Arrival time <select name="at" id="time"></select></label>
-        <label>Min. open docks <input name="min_docks" type="number" min="1" max="50" value="5"></label>
+        <label>Leaving at <select name="at" id="time"></select></label>
+        <label>Min. docks on arrival <input name="min_docks" type="number" min="1" max="50" value="3"></label>
         <button type="submit">Find a dock</button>
       </form>
       <div id="result" class="result" hidden></div>
@@ -29,7 +30,7 @@
     <section class="card">
       <h2>2. Stations at that time</h2>
       <table>
-        <thead><tr><th>Station</th><th class="num">Bikes</th><th class="num">Open docks</th><th class="num">Capacity</th></tr></thead>
+        <thead><tr><th>Station</th><th class="num">Bikes</th><th class="num">Open docks now</th><th class="num">Predicted in 30 min</th><th class="num">Capacity</th></tr></thead>
         <tbody id="stations"></tbody>
       </table>
     </section>
